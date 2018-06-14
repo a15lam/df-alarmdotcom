@@ -1,0 +1,42 @@
+{
+  "name":        "a15lam/df-alarmdotcom",
+  "description": "A DreamFactory service for alarm.com",
+  "keywords":    [
+    "dreamfactory",
+    "security",
+    "alarm.com",
+    "iot"
+  ],
+  "homepage":    "https://github.com/a15lam/df-alarmdotcom",
+  "license":     "Apache-2.0",
+  "authors":     [
+    {
+      "name":  "Arif Islam",
+      "email": "areef.islam@gmail.com"
+    }
+  ],
+  "support":     {
+    "email":  "areef.islam@gmail.com",
+    "source": "https://github.com/a15lam/df-alarmdotcom",
+    "issues": "https://github.com/a15lam/df-alarmdotcom/issues",
+    "wiki":   "https://github.com/a15lam/df-alarmdotcom/wiki"
+  },
+  "require":     {
+    "dreamfactory/df-core": "dev-develop as dev-master"
+  },
+  "autoload":    {
+    "psr-4": {
+      "a15lam\\Alarm\\": "src/"
+    }
+  },
+  "extra":       {
+    "branch-alias": {
+      "dev-develop": "0.1.x-dev"
+    },
+    "laravel": {
+      "providers": [
+        "a15lam\\Alarm\\ServiceProvider"
+      ]
+    }
+  }
+}
