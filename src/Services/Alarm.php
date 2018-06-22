@@ -4,10 +4,15 @@ namespace a15lam\Alarm\Services;
 
 use DreamFactory\Core\Exceptions\UnauthorizedException;
 use DreamFactory\Core\Services\BaseRestService;
-use Cache;
 use DreamFactory\Core\Utility\Curl;
+use Cache;
 
 class Alarm extends BaseRestService {
+    const SESSION_URL = 'https://www.alarm.com/';
+    const LOGIN_URL = 'https://www.alarm.com/login.aspx';
+    const AUTH_URL = 'https://www.alarm.com/web/Default.aspx';
+    const SENSOR_URL = 'https://www.alarm.com/web/api/devices/sensors';
+
     const SESSION_ID_CACHE_KEY = 'alarm-session-id';
     const AUTH_CACHE_KEY = 'alarm-auth-key';
     const LOGIN_CACHE_KEY = 'alarm-login-key';
@@ -23,17 +28,17 @@ class Alarm extends BaseRestService {
 
     protected $username = null;
     protected $password = null;
-    protected $lastSessionId = null;
 
     /** {@inheritdoc} */
     public function __construct(array $settings = [])
     {
         parent::__construct($settings);
 
-        $this->username = env('ALARM_USERNAME');
-        $this->password = env('ALARM_PASSWORD');
+        $this->username = array_get($this->config, 'username');
+        $this->password = array_get($this->config, 'password');
     }
 
+    /** {@inheritdoc} */
     protected function handleGET()
     {
         $resource = $this->resource;
@@ -42,7 +47,6 @@ class Alarm extends BaseRestService {
         } catch (UnauthorizedException $e) {
             $this->bustCache();
             $sensors = $this->handle($resource);
-            $sensors['cache_busted'] = true;
         }
 
         return ['sensor' => $sensors];
@@ -55,7 +59,7 @@ class Alarm extends BaseRestService {
      */
     protected function handle($id=null)
     {
-        $this->lastSessionId = $sessionId = $this->getSessionId();
+        $sessionId = $this->getSessionId();
         $loginInfo = $this->getLoginInfo();
         $loginInfo[static::SESSION_COOKIE] = $sessionId;
         $authInfo = $this->getAuthInfo($loginInfo);
@@ -64,6 +68,9 @@ class Alarm extends BaseRestService {
         return $sensors;
     }
 
+    /**
+     * Clears all related cache
+     */
     protected function bustCache()
     {
         Cache::forget(static::SESSION_ID_CACHE_KEY);
@@ -71,12 +78,15 @@ class Alarm extends BaseRestService {
         Cache::forget(static::LOGIN_CACHE_KEY);
     }
 
+    /**
+     * @return mixed
+     */
     protected function getSessionId()
     {
         $sessionId = Cache::get(static::SESSION_ID_CACHE_KEY);
 
         if(!$sessionId) {
-            $ch = curl_init('https://www.alarm.com/');
+            $ch = curl_init(static::SESSION_URL);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
             curl_setopt($ch, CURLOPT_HEADER, 1);
             $result = curl_exec($ch);
@@ -87,12 +97,18 @@ class Alarm extends BaseRestService {
         return $sessionId;
     }
 
+    /**
+     * @param      $auth
+     * @param null $id
+     * @return array
+     * @throws UnauthorizedException
+     */
     protected function getSensors($auth, $id=null)
     {
         $cookies = static::SESSION_COOKIE_REQUEST.'='.$auth[static::SESSION_COOKIE];
         $cookies .= ';'.static::AUTH_COOKIE.'='.$auth[static::AUTH_COOKIE];
         $headers = [static::UNIQUE_KEY_HEADER.': '. $auth[static::UNIQUE_KEY_COOKIE]];
-        $result = Curl::get('https://www.alarm.com/web/api/devices/sensors', [], [
+        $result = Curl::get(static::SENSOR_URL, [], [
             CURLOPT_COOKIE => $cookies,
             CURLOPT_HTTPHEADER => $headers
         ]);
@@ -115,6 +131,9 @@ class Alarm extends BaseRestService {
         }
     }
 
+    /**
+     * @return mixed
+     */
     protected function getLoginInfo()
     {
         $inputs = Cache::get(static::LOGIN_CACHE_KEY, []);
@@ -129,7 +148,7 @@ class Alarm extends BaseRestService {
                 static::USERNAME_FIELD_ID,
                 static::PASSWORD_FIELD_NAME
             ];
-            $result = Curl::get('https://www.alarm.com/login.aspx');
+            $result = Curl::get(static::LOGIN_URL);
             $dom = new \DOMDocument();
             @$dom->loadHTML($result);
             foreach ($dom->getElementsByTagName('input') as $input) {
@@ -152,6 +171,10 @@ class Alarm extends BaseRestService {
         return $inputs;
     }
 
+    /**
+     * @param $login
+     * @return array
+     */
     protected function getAuthInfo($login)
     {
         $authData = Cache::get(static::AUTH_CACHE_KEY);
@@ -165,11 +188,15 @@ class Alarm extends BaseRestService {
         return $authData;
     }
 
+    /**
+     * @param $login
+     * @return array
+     */
     protected function doLogin($login)
     {
         $cookies = static::SESSION_COOKIE . '=' . array_get($login, static::SESSION_COOKIE);
         $postData = $this->getLoginPostData($login);
-        $ch = curl_init('https://www.alarm.com/web/Default.aspx');
+        $ch = curl_init(static::AUTH_URL);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_HEADER, 1);
@@ -181,6 +208,10 @@ class Alarm extends BaseRestService {
         return $this->getCookies($result);
     }
 
+    /**
+     * @param $login
+     * @return string
+     */
     protected function getLoginPostData($login)
     {
         $data = [];
@@ -193,7 +224,12 @@ class Alarm extends BaseRestService {
         return join('&', $data);
     }
 
-
+    /**
+     * @param      $response
+     * @param      $cookieName
+     * @param null $default
+     * @return mixed
+     */
     protected function getCookieValue($response, $cookieName, $default = null)
     {
         $cookies = $this->getCookies($response);
@@ -201,6 +237,10 @@ class Alarm extends BaseRestService {
         return array_get($cookies, $cookieName, $default);
     }
 
+    /**
+     * @param $response
+     * @return array
+     */
     protected function getCookies($response)
     {
         // get cookie
