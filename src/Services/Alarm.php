@@ -5,6 +5,7 @@ namespace a15lam\Alarm\Services;
 use DreamFactory\Core\Exceptions\UnauthorizedException;
 use DreamFactory\Core\Services\BaseRestService;
 use DreamFactory\Core\Utility\Curl;
+use DreamFactory\Core\Enums\ApiOptions;
 use Cache;
 
 class Alarm extends BaseRestService {
@@ -22,8 +23,8 @@ class Alarm extends BaseRestService {
     const AUTH_COOKIE = 'auth_CustomerDotNet';
     const UNIQUE_KEY_COOKIE = 'afg';
     const UNIQUE_KEY_HEADER = 'ajaxrequestuniquekey';
-
-    const USERNAME_FIELD_ID = 'ctl00_ContentPlaceHolder1_loginform_txtUserName';
+    
+    const USERNAME_FIELD_ID = 'ctl00$ContentPlaceHolder1$loginform$txtUserName';
     const PASSWORD_FIELD_NAME = 'txtPassword';
 
     protected $username = null;
@@ -33,7 +34,6 @@ class Alarm extends BaseRestService {
     public function __construct(array $settings = [])
     {
         parent::__construct($settings);
-
         $this->username = array_get($this->config, 'username');
         $this->password = array_get($this->config, 'password');
     }
@@ -41,15 +41,20 @@ class Alarm extends BaseRestService {
     /** {@inheritdoc} */
     protected function handleGET()
     {
-        $resource = $this->resource;
-        try{
-            $sensors = $this->handle($resource);
-        } catch (UnauthorizedException $e) {
-            $this->bustCache();
-            $sensors = $this->handle($resource);
-        }
+	$resource = $this->resource;
+	$asAL = $this->request->getParameterAsBool(ApiOptions::AS_ACCESS_LIST);
 
-        return ['sensor' => $sensors];
+        if ($asAL) {
+           return ['resource' => ['', '*']];
+        } else {
+            try{
+                $sensors = $this->handle($resource);
+            } catch (UnauthorizedException $e) {
+                $this->bustCache();
+                $sensors = $this->handle($resource);
+            }
+            return ['sensor' => $sensors];
+	    }
     }
 
     /**
@@ -107,7 +112,10 @@ class Alarm extends BaseRestService {
     {
         $cookies = static::SESSION_COOKIE_REQUEST.'='.$auth[static::SESSION_COOKIE];
         $cookies .= ';'.static::AUTH_COOKIE.'='.$auth[static::AUTH_COOKIE];
-        $headers = [static::UNIQUE_KEY_HEADER.': '. $auth[static::UNIQUE_KEY_COOKIE]];
+	    $cookies .= ';twoFactorAuthenticationId='.$auth['twoFactorAuthenticationId'];
+	    $cookies .= ';afg='.$auth['afg'];
+        $cookies .= ';BIGipServer~AlarmApplication~Alarm_WEBADC_Alarm_HTTPS='.$auth['BIGipServer~AlarmApplication~Alarm_WEBADC_Alarm_HTTPS'];
+	    $headers = [static::UNIQUE_KEY_HEADER.': '. $auth[static::UNIQUE_KEY_COOKIE], "accept: application/vnd.api+json"];
         $result = Curl::get(static::SENSOR_URL, [], [
             CURLOPT_COOKIE => $cookies,
             CURLOPT_HTTPHEADER => $headers
@@ -117,8 +125,7 @@ class Alarm extends BaseRestService {
             throw new UnauthorizedException('Unauthorized');
         }
 
-        $data = $result->{'value'};
-
+	    $data = json_decode($result)->{'data'};
         if($id){
             foreach ($data as $sensor) {
                 if($sensor->{'id'} === $id){
@@ -128,7 +135,7 @@ class Alarm extends BaseRestService {
             return [];
         } else {
             return $data;
-        }
+	    }
     }
 
     /**
@@ -156,7 +163,7 @@ class Alarm extends BaseRestService {
                 $name = $input->getAttribute('name');
                 if (in_array($id, $attributes) || in_array($name, $attributes)) {
                     $value = $input->getAttribute('value');
-                    if ($id === static::USERNAME_FIELD_ID) {
+                    if ($id === static::USERNAME_FIELD_ID || $name === static::USERNAME_FIELD_ID) {
                         $value = $this->username;
                     } else if ($name === static::PASSWORD_FIELD_NAME) {
                         $value = $this->password;
@@ -167,7 +174,6 @@ class Alarm extends BaseRestService {
 
             Cache::put(static::LOGIN_CACHE_KEY, $inputs, 10);
         }
-
         return $inputs;
     }
 
@@ -204,7 +210,7 @@ class Alarm extends BaseRestService {
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
         curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
         $result = curl_exec($ch);
-
+        
         return $this->getCookies($result);
     }
 
@@ -251,8 +257,6 @@ class Alarm extends BaseRestService {
             parse_str($item, $cookie);
             $cookies = array_merge($cookies, $cookie);
         }
-
         return $cookies;
     }
 }
-
